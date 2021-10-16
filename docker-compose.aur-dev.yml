@@ -5,6 +5,15 @@ services:
     volumes:
       - cache:/cache
 
+  memcached:
+    restart: always
+
+  redis:
+    restart: always
+
+  mariadb:
+    restart: always
+
   git:
     restart: always
     volumes:
@@ -20,10 +29,12 @@ services:
       - smartgit_run:/var/run/smartgit
 
   cgit-php:
+    restart: always
     volumes:
       - ${GIT_DATA_DIR}:/aurweb/aur.git
 
   cgit-fastapi:
+    restart: always
     volumes:
       - ${GIT_DATA_DIR}:/aurweb/aur.git
 
