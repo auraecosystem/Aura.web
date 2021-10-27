@@ -48,6 +48,7 @@ deploy:
     - secure
   rules:
     - if: $CI_COMMIT_BRANCH == "docker-deploy"
+      when: manual
   variables:
     FASTAPI_BACKEND: gunicorn
     FASTAPI_WORKERS: 5
@@ -63,3 +64,6 @@ deploy:
     - export DOCKER_HOST="unix:///tmp/docker.sock"
     - docker-compose build
     - docker-compose -f docker-compose.yml -f docker-compose.aur-dev.yml up -d
+  environment:
+    name: development
+    url: https://aur-dev.archlinux.org
