@@ -1,6 +1,7 @@
 import base64
 import hashlib
 
+import requests
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import backref, relationship
 
@@ -119,3 +120,19 @@ class PackageRequest(Base):
         """Return the mailing list URL for the request."""
         url = config.get("options", "ml_thread_url") % (self.ml_message_id_hash())
         return url
+
+    def ml_message_api_url(self) -> str:
+        """Return the mailing list API URL for the request."""
+        url = config.get("options", "ml_thread_api_url") % (self.ml_message_id_hash())
+        return url
+
+    def ml_message_reply_count(self) -> int:
+        """Return the number of replies in thread"""
+        url = self.ml_message_api_url()
+        count = 0
+        response = requests.get(url, params="?format=json")
+        if response.status_code == 200:
+            response = response.json()
+            for message in response:
+                count += len(message.get("children", []))
+        return count
