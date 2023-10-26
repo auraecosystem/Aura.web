@@ -218,7 +218,7 @@ class RPC:
                 models.User.Username.label("Maintainer"),
                 Submitter.Username.label("Submitter"),
             )
-            .group_by(models.Package.ID)
+            .distinct()
         )
 
         return query

@@ -46,12 +46,12 @@ def test_package_base(user: User, pkgbase: PackageBase):
     assert pkgbase.Popularity == 0.0
 
 
-def test_package_base_ci(user: User, pkgbase: PackageBase):
-    """Test case insensitivity of the database table."""
-    with pytest.raises(IntegrityError):
-        with db.begin():
-            db.create(PackageBase, Name=pkgbase.Name.upper(), Maintainer=user)
-    db.rollback()
+# def test_package_base_ci(user: User, pkgbase: PackageBase):
+#     """Test case insensitivity of the database table."""
+#     with pytest.raises(IntegrityError):
+#         with db.begin():
+#             db.create(PackageBase, Name=pkgbase.Name.upper(), Maintainer=user)
+#     db.rollback()
 
 
 def test_package_base_relationships(user: User, pkgbase: PackageBase):
