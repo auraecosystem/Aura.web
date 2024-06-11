@@ -86,6 +86,7 @@
                         <th>{{ "Type" | tr }}</th>
                         <th>{{ "Comments" | tr }}</th>
                         <th>{{ "Filed by" | tr }}</th>
+                        <th>{{ "Thread" | tr }}</th>
                         <th>{{ "Date" | tr }}</th>
                         <th>{{ "Status" | tr }}</th>
                     </tr>
@@ -116,6 +117,7 @@
                             </td>
                             {# Comments #}
                             <td class="wrap">{{ result.Comments }}</td>
+
                             <td>
                                 {# Filed by #}
                                 {# If the record has an associated User, display a link to that user. #}
@@ -125,10 +127,18 @@
                                         {{ result.User.Username }}
                                     </a>&nbsp;
                                 {% endif %}
+                            </td>
+
+                            {% set reply_count = result.ml_message_reply_count() %}
+                            <td>
                                 <a target="_blank" rel="noopener noreferrer" href="{{ result.ml_message_url() }}">
-                                    (PRQ#{{ result.ID }})
+                                    [PRQ#{{ result.ID }}]
+                                    {% if reply_count > 0 %}
+                                        - {{ reply_count }} 📧
+                                    {% endif %}
                                 </a>
                             </td>
+
                             {% set idle_time = config_getint("options", "request_idle_time") %}
                             {% set time_delta = (utcnow - result.RequestTS) | int %}
 
