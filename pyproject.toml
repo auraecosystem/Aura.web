@@ -39,7 +39,7 @@ max-complexity = 10
 # This is coming from https://github.com/pytest-dev/pytest-xdist/issues/825 and it's caused from pytest-cov
 # Remove once fixed: https://github.com/pytest-dev/pytest-cov/issues/557
 filterwarnings = ['ignore:The --rsyncdir command line argument and rsyncdirs config variable are deprecated.:DeprecationWarning']
-addopts = '--cov=aurweb --cov-append --dist load --dist loadfile -n auto --timeout=30'
+addopts = '--cov=aurweb --cov-append --dist load --dist loadfile -n auto --timeout=30 --timeout-func-only'
 testpaths = ['test']
 
 [tool.mypy]
