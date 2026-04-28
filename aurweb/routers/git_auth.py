@@ -26,18 +26,14 @@ def _has_write_access(pkgbase_name: str, user: User) -> bool:
     pkgbase = db.query(PackageBase).filter(PackageBase.Name == pkgbase_name).first()
 
     if not pkgbase:
-        # Package doesn't exist yet — anyone can create.
         return True
 
-    # Orphaned packages are writable by anyone.
     if not pkgbase.MaintainerUID:
         return True
 
-    # Maintainer has access.
     if pkgbase.MaintainerUID == user.ID:
         return True
 
-    # Check co-maintainers.
     is_comaintainer = (
         db.query(PackageComaintainer)
         .filter(
