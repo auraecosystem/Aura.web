@@ -1,16 +1,27 @@
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy import orm
+
 # Supported database drivers.
 DRIVERS = {"mysql": "mysql+mysqldb"}
 
 
-def make_random_value(table: str, column: str, length: int):
+def make_random_value(
+    table: type, column: "orm.InstrumentedAttribute", length: int
+) -> str:
     """Generate a unique, random value for a string column in a table.
 
     :return: A unique string that is not in the database
     """
+    from sqlalchemy import select
+
     import aurweb.util
 
     string = aurweb.util.make_random_string(length)
-    while query(table).filter(column == string).first():
+    while (
+        get_session().execute(select(table).where(column == string)).scalars().first()
+    ):
         string = aurweb.util.make_random_string(length)
     return string
 
@@ -61,27 +72,70 @@ def name() -> str:
     return "db" + sha1
 
 
-# Module-private global memo used to store SQLAlchemy sessions.
+from contextvars import ContextVar  # noqa: E402
+
+# Process-global session memory, used as a fallback outside HTTP requests
+# (scripts, CLI, tests). HTTP requests get a per-request session via
+# RequestSessionMiddleware.
 _sessions = {}
+_sessionmakers = {}
+_request_session: ContextVar = ContextVar("aurweb_request_session", default=None)
 
 
-def get_session(engine=None):
-    """Return aurweb.db's global session."""
+def _get_sessionmaker(engine=None):
     dbname = name()
-
-    global _sessions
-    if dbname not in _sessions:
-        from sqlalchemy.orm import scoped_session, sessionmaker
+    global _sessionmakers
+    if dbname not in _sessionmakers:
+        from sqlalchemy.orm import sessionmaker
 
         if not engine:  # pragma: no cover
             engine = get_engine()
+        _sessionmakers[dbname] = sessionmaker(engine, autoflush=False)
+    return _sessionmakers[dbname]
 
-        Session = scoped_session(
-            sessionmaker(autocommit=True, autoflush=False, bind=engine)
-        )
-        _sessions[dbname] = Session()
+
+def get_session(engine=None):
+    """Return the active SQLAlchemy session."""
+    sess = _request_session.get()
+    if sess is not None:
+        return sess
+
+    dbname = name()
+    global _sessions
+    if dbname not in _sessions:
+        from sqlalchemy.orm import scoped_session
+
+        _sessions[dbname] = scoped_session(_get_sessionmaker(engine))()
 
     return _sessions.get(dbname)
+
+
+class RequestSessionMiddleware:
+    """ASGI middleware: scope a fresh SQLAlchemy session per HTTP request."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # Under pytest the db_session fixture owns the session, so don't
+        # shadow it - tests need fixtures and routes to share one identity map.
+        import os
+
+        if os.environ.get("PYTEST_CURRENT_TEST") or _request_session.get():
+            await self.app(scope, receive, send)
+            return
+
+        session = _get_sessionmaker()()
+        token = _request_session.set(session)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            session.close()
+            _request_session.reset(token)
 
 
 def pop_session(dbname: str) -> None:
@@ -103,18 +157,6 @@ def refresh(model):
     """
     get_session().refresh(model)
     return model
-
-
-def query(Model, *args, **kwargs):
-    """
-    Perform an ORM query against the database session.
-
-    This method also runs Query.filter on the resulting model
-    query with *args and **kwargs.
-
-    :param Model: Declarative ORM class
-    """
-    return get_session().query(Model).filter(*args, **kwargs)
 
 
 def create(Model, *args, **kwargs):
@@ -157,8 +199,26 @@ def add(model):
 
 
 def begin():
-    """Begin an SQLAlchemy SessionTransaction."""
-    return get_session().begin()
+    """Transaction context manager.
+
+    Commits any pre-existing autobegun transaction first so the block
+    runs with a fresh MVCC snapshot.
+    """
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _begin():
+        session = get_session()
+        if session.in_transaction():
+            session.commit()
+        try:
+            yield
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+
+    return _begin()
 
 
 def retry_deadlock(func):
@@ -173,9 +233,7 @@ def retry_deadlock(func):
             return func(*args, **kwargs)
         except OperationalError as exc:
             if _i < limit and "Deadlock found" in str(exc):
-                # Retry on deadlock by recursing into `wrapper`
                 return wrapper(*args, _i=_i + 1, **kwargs)
-            # Otherwise, just raise the exception
             raise exc
 
     return wrapper
@@ -193,9 +251,7 @@ def async_retry_deadlock(func):
             return await func(*args, **kwargs)
         except OperationalError as exc:
             if _i < limit and "Deadlock found" in str(exc):
-                # Retry on deadlock by recursing into `wrapper`
                 return await wrapper(*args, _i=_i + 1, **kwargs)
-            # Otherwise, just raise the exception
             raise exc
 
     return wrapper
@@ -207,18 +263,9 @@ def get_sqlalchemy_url():
 
     :return: sqlalchemy.engine.url.URL
     """
-    import sqlalchemy
-    from sqlalchemy.engine.url import URL
+    from sqlalchemy.engine import URL
 
     import aurweb.config
-
-    constructor = URL
-
-    parts = sqlalchemy.__version__.split(".")
-    major = int(parts[0])
-    minor = int(parts[1])
-    if major == 1 and minor >= 4:  # pragma: no cover
-        constructor = URL.create
 
     aur_db_backend = aurweb.config.get("database", "backend")
     if aur_db_backend == "mysql":
@@ -227,7 +274,7 @@ def get_sqlalchemy_url():
         if not port:
             param_query["unix_socket"] = aurweb.config.get("database", "socket")
 
-        return constructor(
+        return URL.create(
             DRIVERS.get(aur_db_backend),
             username=aurweb.config.get("database", "user"),
             password=aurweb.config.get_with_fallback(
@@ -239,7 +286,7 @@ def get_sqlalchemy_url():
             query=param_query,
         )
     elif aur_db_backend == "sqlite":
-        return constructor(
+        return URL.create(
             "sqlite",
             database=aurweb.config.get("database", "name"),
         )
@@ -296,6 +343,13 @@ def get_engine(dbname: str | None = None, echo: bool = False):
         is_sqlite = bool(db_backend == "sqlite")
         if is_sqlite:  # pragma: no cover
             connect_args["check_same_thread"] = False
+        elif db_backend == "mysql":
+            # Force UTC for every connection so that TIMESTAMP columns (which
+            # MySQL/MariaDB stores in UTC) always use consistent timezone
+            # arithmetic. Without this, servers running in a non-UTC system
+            # timezone may reject valid epoch-adjacent TIMESTAMP defaults such
+            # as '1970-01-01 00:00:01' with error 1067.
+            connect_args["init_command"] = "SET time_zone = '+00:00'"
 
         kwargs = {"echo": echo, "connect_args": connect_args}
         from sqlalchemy import create_engine

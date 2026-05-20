@@ -5,6 +5,7 @@ from typing import Generator
 
 import bcrypt
 import pytest
+from sqlalchemy import select
 
 import aurweb.auth
 import aurweb.config
@@ -97,13 +98,23 @@ def test_user_login_logout(user: User) -> None:
     assert user.is_authenticated()
 
     # Expect that User session relationships work right.
-    user_session = db.query(Session, Session.UsersID == user.ID).first()
+    user_session = (
+        db.get_session()
+        .execute(select(Session).where(Session.UsersID == user.ID))
+        .scalars()
+        .first()
+    )
     assert user_session == user.session
     assert user.session.SessionID == sid
     assert user.session.User == user
 
     # Search for the user via query API.
-    result = db.query(User, User.ID == user.ID).first()
+    result = (
+        db.get_session()
+        .execute(select(User).where(User.ID == user.ID))
+        .scalars()
+        .first()
+    )
 
     # Compare the result and our original user.
     assert result == user
@@ -194,7 +205,15 @@ def test_user_has_credential(user: User) -> None:
 
 
 def test_user_ssh_pub_key(user: User) -> None:
-    assert user.ssh_pub_keys.first() is None
+    def get_first_key() -> SSHPubKey | None:
+        return (
+            db.get_session()
+            .execute(select(SSHPubKey).where(SSHPubKey.UserID == user.ID))
+            .scalars()
+            .first()
+        )
+
+    assert get_first_key() is None
 
     with db.begin():
         ssh_pub_key = db.create(
@@ -204,7 +223,7 @@ def test_user_ssh_pub_key(user: User) -> None:
             PubKey="testPubKey",
         )
 
-    assert user.ssh_pub_keys.first() == ssh_pub_key
+    assert get_first_key() == ssh_pub_key
 
 
 def test_user_credential_types(user: User) -> None:

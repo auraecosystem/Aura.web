@@ -6,6 +6,7 @@ from typing import Generator
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from aurweb import asgi, config, db, defaults, time
 from aurweb.models import Package, PackageBase, PackageRequest, User
@@ -271,7 +272,14 @@ def test_request_post_deletion(client: TestClient, auser2: User, pkgbase: Packag
         resp = request.post(endpoint, data=data)
     assert resp.status_code == int(HTTPStatus.SEE_OTHER)
 
-    pkgreq = pkgbase.requests.first()
+    pkgreq = (
+        db.get_session()
+        .execute(
+            select(PackageRequest).where(PackageRequest.PackageBaseID == pkgbase.ID)
+        )
+        .scalars()
+        .first()
+    )
     assert pkgreq is not None
     assert pkgreq.ReqTypeID == DELETION_ID
     assert pkgreq.Status == PENDING_ID
@@ -295,7 +303,7 @@ def test_request_post_deletion_as_maintainer(
     assert resp.status_code == int(HTTPStatus.SEE_OTHER)
 
     # Check the pkgreq record got created and accepted.
-    pkgreq = db.query(PackageRequest).first()
+    pkgreq = db.get_session().execute(select(PackageRequest)).scalars().first()
     assert pkgreq is not None
     assert pkgreq.ReqTypeID == DELETION_ID
     assert pkgreq.Status == ACCEPTED_ID
@@ -336,8 +344,11 @@ def test_request_post_deletion_autoaccept(
     assert resp.status_code == int(HTTPStatus.SEE_OTHER)
 
     pkgreq = (
-        db.query(PackageRequest)
-        .filter(PackageRequest.PackageBaseName == pkgbase.Name)
+        db.get_session()
+        .execute(
+            select(PackageRequest).where(PackageRequest.PackageBaseName == pkgbase.Name)
+        )
+        .scalars()
         .first()
     )
     assert pkgreq is not None
@@ -378,7 +389,14 @@ def test_request_post_merge(
         resp = request.post(endpoint, data=data)
     assert resp.status_code == int(HTTPStatus.SEE_OTHER)
 
-    pkgreq = pkgbase.requests.first()
+    pkgreq = (
+        db.get_session()
+        .execute(
+            select(PackageRequest).where(PackageRequest.PackageBaseID == pkgbase.ID)
+        )
+        .scalars()
+        .first()
+    )
     assert pkgreq is not None
     assert pkgreq.ReqTypeID == MERGE_ID
     assert pkgreq.Status == PENDING_ID
@@ -403,7 +421,14 @@ def test_request_post_orphan(client: TestClient, auser: User, pkgbase: PackageBa
         resp = request.post(endpoint, data=data)
     assert resp.status_code == int(HTTPStatus.SEE_OTHER)
 
-    pkgreq = pkgbase.requests.first()
+    pkgreq = (
+        db.get_session()
+        .execute(
+            select(PackageRequest).where(PackageRequest.PackageBaseID == pkgbase.ID)
+        )
+        .scalars()
+        .first()
+    )
     assert pkgreq is not None
     assert pkgreq.ReqTypeID == ORPHAN_ID
     assert pkgreq.Status == PENDING_ID
@@ -657,7 +682,7 @@ def test_orphan_request(
     assert pkgbase.Maintainer is None
 
     # We should have removed the comaintainers.
-    assert not pkgbase.comaintainers.all()
+    assert not pkgbase.comaintainers
 
     # Ensure that `pkgreq`.ClosureComment was left alone when specified.
     assert pkgreq.ClosureComment == comments
@@ -719,7 +744,14 @@ def test_request_post_orphan_autoaccept(
         resp = request.post(endpoint, data=data)
     assert resp.status_code == int(HTTPStatus.SEE_OTHER)
 
-    pkgreq = pkgbase.requests.first()
+    pkgreq = (
+        db.get_session()
+        .execute(
+            select(PackageRequest).where(PackageRequest.PackageBaseID == pkgbase.ID)
+        )
+        .scalars()
+        .first()
+    )
     assert pkgreq is not None
     assert pkgreq.ReqTypeID == ORPHAN_ID
 

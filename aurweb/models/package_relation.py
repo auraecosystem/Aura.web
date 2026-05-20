@@ -10,23 +10,17 @@ from aurweb.models.relation_type import RelationType as _RelationType
 class PackageRelation(Base):
     __table__ = schema.PackageRelations
     __tablename__ = __table__.name
-    __mapper_args__ = {
-        "primary_key": [
-            __table__.c.PackageID,
-            __table__.c.RelTypeID,
-            __table__.c.RelName,
-        ]
-    }
+    __mapper_args__ = {"primary_key": [__table__.c.ID]}
 
     Package = relationship(
         _Package,
-        backref=backref("package_relations", lazy="dynamic", cascade="all, delete"),
+        backref=backref("package_relations", cascade="all, delete"),
         foreign_keys=[__table__.c.PackageID],
     )
 
     RelationType = relationship(
         _RelationType,
-        backref=backref("package_relations", lazy="dynamic"),
+        backref=backref("package_relations"),
         foreign_keys=[__table__.c.RelTypeID],
     )
 

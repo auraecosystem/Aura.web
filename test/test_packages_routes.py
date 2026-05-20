@@ -5,6 +5,7 @@ from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from aurweb import asgi, cache, config, db, time
 from aurweb.filters import datetime_display
@@ -47,14 +48,24 @@ def create_package(pkgname: str, maintainer: User) -> Package:
 def create_package_dep(
     package: Package, depname: str, dep_type_name: str = "depends"
 ) -> PackageDependency:
-    dep_type = db.query(DependencyType, DependencyType.Name == dep_type_name).first()
+    dep_type = (
+        db.get_session()
+        .execute(select(DependencyType).where(DependencyType.Name == dep_type_name))
+        .scalars()
+        .first()
+    )
     return db.create(
         PackageDependency, DependencyType=dep_type, Package=package, DepName=depname
     )
 
 
 def create_package_rel(package: Package, relname: str) -> PackageRelation:
-    rel_type = db.query(RelationType, RelationType.ID == PROVIDES_ID).first()
+    rel_type = (
+        db.get_session()
+        .execute(select(RelationType).where(RelationType.ID == PROVIDES_ID))
+        .scalars()
+        .first()
+    )
     return db.create(
         PackageRelation, RelationType=rel_type, Package=package, RelName=relname
     )
@@ -102,7 +113,12 @@ def user() -> Generator[User]:
 @pytest.fixture
 def maintainer() -> Generator[User]:
     """Yield a specific User used to maintain packages."""
-    account_type = db.query(AccountType, AccountType.ID == USER_ID).first()
+    account_type = (
+        db.get_session()
+        .execute(select(AccountType).where(AccountType.ID == USER_ID))
+        .scalars()
+        .first()
+    )
     with db.begin():
         maintainer = db.create(
             User,
@@ -116,9 +132,14 @@ def maintainer() -> Generator[User]:
 
 @pytest.fixture
 def pm_user():
-    pm_type = db.query(
-        AccountType, AccountType.AccountType == "Package Maintainer"
-    ).first()
+    pm_type = (
+        db.get_session()
+        .execute(
+            select(AccountType).where(AccountType.AccountType == "Package Maintainer")
+        )
+        .scalars()
+        .first()
+    )
     with db.begin():
         pm_user = db.create(
             User,
@@ -134,7 +155,12 @@ def pm_user():
 @pytest.fixture
 def user_who_hates_grey_comments() -> Generator[User]:
     """Yield a specific User who doesn't like grey comments."""
-    account_type = db.query(AccountType, AccountType.ID == USER_ID).first()
+    account_type = (
+        db.get_session()
+        .execute(select(AccountType).where(AccountType.ID == USER_ID))
+        .scalars()
+        .first()
+    )
     with db.begin():
         user_who_hates_grey_comments = db.create(
             User,
@@ -520,7 +546,12 @@ def test_package_requests_display(
     target = root.xpath(selector)[0]
     assert target.text.strip() == "1 pending request"
 
-    type_ = db.query(RequestType, RequestType.ID == DELETION_ID).first()
+    type_ = (
+        db.get_session()
+        .execute(select(RequestType).where(RequestType.ID == DELETION_ID))
+        .scalars()
+        .first()
+    )
     with db.begin():
         db.create(
             PackageRequest,
@@ -691,14 +722,25 @@ def test_package_dependencies(client: TestClient, maintainer: User, package: Pac
     assert resp.status_code == int(HTTPStatus.OK)
 
     # Let's make sure all the non-broken deps are ordered as we expect.
-    all_deps = [dep.DepName for dep in package.package_dependencies.all()]
+    all_deps = [dep.DepName for dep in package.package_dependencies]
     aur_packages, official_packages, _ = pkgutil.lookup_dependencies(all_deps)
+    ordered_deps = (
+        db.get_session()
+        .execute(
+            select(PackageDependency)
+            .where(PackageDependency.PackageID == package.ID)
+            .order_by(
+                PackageDependency.DepTypeID.asc(),
+                PackageDependency.DepName.asc(),
+            )
+        )
+        .scalars()
+        .all()
+    )
     expected = list(
         filter(
             lambda e: e.DepName in aur_packages or e.DepName in official_packages,
-            package.package_dependencies.order_by(
-                PackageDependency.DepTypeID.asc(), PackageDependency.DepName.asc()
-            ).all(),
+            ordered_deps,
         )
     )
     root = parse_root(resp.text)
@@ -1556,9 +1598,17 @@ def test_packages_post_unflag(
 
 
 def test_packages_post_notify(client: TestClient, user: User, package: Package):
-    notif = package.PackageBase.notifications.filter(
-        PackageNotification.UserID == user.ID
-    ).first()
+    notif = (
+        db.get_session()
+        .execute(
+            select(PackageNotification).where(
+                PackageNotification.PackageBaseID == package.PackageBase.ID,
+                PackageNotification.UserID == user.ID,
+            )
+        )
+        .scalars()
+        .first()
+    )
     assert notif is None
 
     # Try to enable notifications but supply no packages, causing
@@ -1623,9 +1673,17 @@ def test_packages_post_unnotify(client: TestClient, user: User, package: Package
     assert successes[0].text.strip() == expected
 
     # Let's ensure the record got removed.
-    notif = package.PackageBase.notifications.filter(
-        PackageNotification.UserID == user.ID
-    ).first()
+    notif = (
+        db.get_session()
+        .execute(
+            select(PackageNotification).where(
+                PackageNotification.PackageBaseID == package.PackageBase.ID,
+                PackageNotification.UserID == user.ID,
+            )
+        )
+        .scalars()
+        .first()
+    )
     assert notif is None
 
     # Try it again. The notif no longer exists.

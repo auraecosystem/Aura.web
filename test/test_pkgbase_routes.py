@@ -5,7 +5,7 @@ from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import and_
+from sqlalchemy import and_, select
 
 from aurweb import asgi, config, db, time
 from aurweb.models.account_type import USER_ID, AccountType
@@ -41,14 +41,24 @@ def create_package(pkgname: str, maintainer: User) -> Package:
 def create_package_dep(
     package: Package, depname: str, dep_type_name: str = "depends"
 ) -> PackageDependency:
-    dep_type = db.query(DependencyType, DependencyType.Name == dep_type_name).first()
+    dep_type = (
+        db.get_session()
+        .execute(select(DependencyType).where(DependencyType.Name == dep_type_name))
+        .scalars()
+        .first()
+    )
     return db.create(
         PackageDependency, DependencyType=dep_type, Package=package, DepName=depname
     )
 
 
 def create_package_rel(package: Package, relname: str) -> PackageRelation:
-    rel_type = db.query(RelationType, RelationType.ID == PROVIDES_ID).first()
+    rel_type = (
+        db.get_session()
+        .execute(select(RelationType).where(RelationType.ID == PROVIDES_ID))
+        .scalars()
+        .first()
+    )
     return db.create(
         PackageRelation, RelationType=rel_type, Package=package, RelName=relname
     )
@@ -91,7 +101,12 @@ def user() -> Generator[User]:
 @pytest.fixture
 def maintainer() -> Generator[User]:
     """Yield a specific User used to maintain packages."""
-    account_type = db.query(AccountType, AccountType.ID == USER_ID).first()
+    account_type = (
+        db.get_session()
+        .execute(select(AccountType).where(AccountType.ID == USER_ID))
+        .scalars()
+        .first()
+    )
     with db.begin():
         maintainer = db.create(
             User,
@@ -106,7 +121,12 @@ def maintainer() -> Generator[User]:
 @pytest.fixture
 def comaintainer() -> Generator[User]:
     """Yield a specific User used to maintain packages."""
-    account_type = db.query(AccountType, AccountType.ID == USER_ID).first()
+    account_type = (
+        db.get_session()
+        .execute(select(AccountType).where(AccountType.ID == USER_ID))
+        .scalars()
+        .first()
+    )
     with db.begin():
         comaintainer = db.create(
             User,
@@ -120,9 +140,14 @@ def comaintainer() -> Generator[User]:
 
 @pytest.fixture
 def pm_user():
-    pm_type = db.query(
-        AccountType, AccountType.AccountType == "Package Maintainer"
-    ).first()
+    pm_type = (
+        db.get_session()
+        .execute(
+            select(AccountType).where(AccountType.AccountType == "Package Maintainer")
+        )
+        .scalars()
+        .first()
+    )
     with db.begin():
         pm_user = db.create(
             User,
@@ -230,7 +255,12 @@ def packages(maintainer: User) -> Generator[list[Package]]:
 @pytest.fixture
 def requests(user: User, packages: list[Package]) -> Generator[list[PackageRequest]]:
     pkgreqs = []
-    deletion_type = db.query(RequestType).filter(RequestType.ID == DELETION_ID).first()
+    deletion_type = (
+        db.get_session()
+        .execute(select(RequestType).where(RequestType.ID == DELETION_ID))
+        .scalars()
+        .first()
+    )
     with db.begin():
         for i in range(55):
             pkgreq = db.create(
@@ -481,9 +511,17 @@ def test_pkgbase_comments(
     # that the notification was created and clears it up so we can
     # test enabling it during edit.
     pkgbase = package.PackageBase
-    db_notif = pkgbase.notifications.filter(
-        PackageNotification.UserID == maintainer.ID
-    ).first()
+    db_notif = (
+        db.get_session()
+        .execute(
+            select(PackageNotification).where(
+                PackageNotification.PackageBaseID == pkgbase.ID,
+                PackageNotification.UserID == maintainer.ID,
+            )
+        )
+        .scalars()
+        .first()
+    )
     with db.begin():
         db.delete(db_notif)
 
@@ -512,9 +550,17 @@ def test_pkgbase_comments(
     assert bodies[0].text.strip() == "Edited comment."
 
     # Ensure that a notification was created.
-    db_notif = pkgbase.notifications.filter(
-        PackageNotification.UserID == maintainer.ID
-    ).first()
+    db_notif = (
+        db.get_session()
+        .execute(
+            select(PackageNotification).where(
+                PackageNotification.PackageBaseID == pkgbase.ID,
+                PackageNotification.UserID == maintainer.ID,
+            )
+        )
+        .scalars()
+        .first()
+    )
     assert db_notif is not None
 
     # Now, let's edit again, but cancel.
@@ -552,9 +598,17 @@ def test_pkgbase_comments(
     assert resp.status_code == int(HTTPStatus.SEE_OTHER)
 
     # Ensure that a notification was created.
-    db_notif = pkgbase.notifications.filter(
-        PackageNotification.UserID == maintainer.ID
-    ).first()
+    db_notif = (
+        db.get_session()
+        .execute(
+            select(PackageNotification).where(
+                PackageNotification.PackageBaseID == pkgbase.ID,
+                PackageNotification.UserID == maintainer.ID,
+            )
+        )
+        .scalars()
+        .first()
+    )
     assert db_notif is not None
 
     # Don't supply a comment; should return BAD_REQUEST.
@@ -1192,7 +1246,20 @@ def test_pkgbase_notify(client: TestClient, user: User, package: Package):
     pkgbase = package.PackageBase
 
     # We have no notif record yet; assert that.
-    notif = pkgbase.notifications.filter(PackageNotification.UserID == user.ID).first()
+    def get_notif() -> PackageNotification | None:
+        return (
+            db.get_session()
+            .execute(
+                select(PackageNotification).where(
+                    PackageNotification.PackageBaseID == pkgbase.ID,
+                    PackageNotification.UserID == user.ID,
+                )
+            )
+            .scalars()
+            .first()
+        )
+
+    notif = get_notif()
     assert notif is None
 
     # Enable notifications.
@@ -1203,7 +1270,7 @@ def test_pkgbase_notify(client: TestClient, user: User, package: Package):
         resp = request.post(endpoint)
     assert resp.status_code == int(HTTPStatus.SEE_OTHER)
 
-    notif = pkgbase.notifications.filter(PackageNotification.UserID == user.ID).first()
+    notif = get_notif()
     assert notif is not None
 
     # Disable notifications.
@@ -1213,7 +1280,7 @@ def test_pkgbase_notify(client: TestClient, user: User, package: Package):
         resp = request.post(endpoint)
     assert resp.status_code == int(HTTPStatus.SEE_OTHER)
 
-    notif = pkgbase.notifications.filter(PackageNotification.UserID == user.ID).first()
+    notif = get_notif()
     assert notif is None
 
 
@@ -1221,7 +1288,20 @@ def test_pkgbase_vote(client: TestClient, user: User, package: Package):
     pkgbase = package.PackageBase
 
     # We haven't voted yet.
-    vote = pkgbase.package_votes.filter(PackageVote.UsersID == user.ID).first()
+    def get_vote() -> PackageVote | None:
+        return (
+            db.get_session()
+            .execute(
+                select(PackageVote).where(
+                    PackageVote.PackageBaseID == pkgbase.ID,
+                    PackageVote.UsersID == user.ID,
+                )
+            )
+            .scalars()
+            .first()
+        )
+
+    vote = get_vote()
     assert vote is None
 
     # Vote for the package.
@@ -1232,7 +1312,7 @@ def test_pkgbase_vote(client: TestClient, user: User, package: Package):
         resp = request.post(endpoint)
     assert resp.status_code == int(HTTPStatus.SEE_OTHER)
 
-    vote = pkgbase.package_votes.filter(PackageVote.UsersID == user.ID).first()
+    vote = get_vote()
     assert vote is not None
     assert pkgbase.NumVotes == 1
 
@@ -1243,7 +1323,7 @@ def test_pkgbase_vote(client: TestClient, user: User, package: Package):
         resp = request.post(endpoint)
     assert resp.status_code == int(HTTPStatus.SEE_OTHER)
 
-    vote = pkgbase.package_votes.filter(PackageVote.UsersID == user.ID).first()
+    vote = get_vote()
     assert vote is None
     assert pkgbase.NumVotes == 0
 
@@ -1284,7 +1364,7 @@ def test_pkgbase_disown_as_maint_with_comaint(
     pkgbase = package.PackageBase
 
     assert pkgbase.Maintainer == user
-    assert pkgbase.comaintainers.count() == 0
+    assert not pkgbase.comaintainers
 
 
 def test_pkgbase_disown(
@@ -1446,7 +1526,12 @@ def test_pkgbase_delete(client: TestClient, pm_user: User, package: Package):
     assert resp.status_code == int(HTTPStatus.SEE_OTHER)
 
     # Let's assert that the package base record got removed.
-    record = db.query(PackageBase).filter(PackageBase.Name == pkgbase.Name).first()
+    record = (
+        db.get_session()
+        .execute(select(PackageBase).where(PackageBase.Name == pkgbase.Name))
+        .scalars()
+        .first()
+    )
     assert record is None
 
     # Two emails should've been sent out; an autogenerated
@@ -1655,9 +1740,9 @@ def test_pkgbase_merge_post(
     assert resp.status_code == int(HTTPStatus.SEE_OTHER)
 
     # Save these relationships for later comparison.
-    comments = package.PackageBase.comments.all()
-    notifs = package.PackageBase.notifications.all()
-    votes = package.PackageBase.package_votes.all()
+    comments = list(package.PackageBase.comments)
+    notifs = list(package.PackageBase.notifications)
+    votes = list(package.PackageBase.package_votes)
 
     # Merge the package into target.
     endpoint = f"/pkgbase/{package.PackageBase.Name}/merge"
@@ -1675,12 +1760,18 @@ def test_pkgbase_merge_post(
 
     # Assert that the original comments, notifs and votes we setup
     # got migrated to target as intended.
-    assert comments == target.comments.all()
-    assert notifs == target.notifications.all()
-    assert votes == target.package_votes.all()
+    db.get_session().expire_all()
+    assert comments == list(target.comments)
+    assert notifs == list(target.notifications)
+    assert votes == list(target.package_votes)
 
     # ...and that the package got deleted.
-    package = db.query(Package).filter(Package.Name == pkgname).first()
+    package = (
+        db.get_session()
+        .execute(select(Package).where(Package.Name == pkgname))
+        .scalars()
+        .first()
+    )
     assert package is None
 
     # Our previously-made request should have gotten accepted.
@@ -1689,14 +1780,17 @@ def test_pkgbase_merge_post(
 
     # A PackageRequest is always created when merging this way.
     pkgreq = (
-        db.query(PackageRequest)
-        .filter(
-            and_(
-                PackageRequest.ReqTypeID == MERGE_ID,
-                PackageRequest.PackageBaseName == pkgbasename,
-                PackageRequest.MergeBaseName == target.Name,
+        db.get_session()
+        .execute(
+            select(PackageRequest).where(
+                and_(
+                    PackageRequest.ReqTypeID == MERGE_ID,
+                    PackageRequest.PackageBaseName == pkgbasename,
+                    PackageRequest.MergeBaseName == target.Name,
+                )
             )
         )
+        .scalars()
         .first()
     )
     assert pkgreq is not None

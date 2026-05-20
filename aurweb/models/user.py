@@ -3,7 +3,7 @@ from typing import Set
 
 import bcrypt
 from fastapi import Request
-from sqlalchemy import or_
+from sqlalchemy import exists, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import backref, relationship
 
@@ -29,7 +29,7 @@ class User(Base):
 
     AccountType = relationship(
         _AccountType,
-        backref=backref("users", lazy="dynamic"),
+        backref=backref("users"),
         foreign_keys=[__table__.c.AccountTypeID],
         uselist=False,
     )
@@ -115,6 +115,7 @@ class User(Base):
         # generation in an HTTPException.
         tries = 36
 
+        sid = None
         exc = None
         for i in range(tries):
             exc = None
@@ -135,6 +136,7 @@ class User(Base):
                         if last_updated and last_updated < now_ts:
                             current_session.SessionID = generate_unique_sid()
                         current_session.LastUpdateTS = now_ts
+                        sid = current_session.SessionID
 
                     # Unset InactivityTS, we've logged in!
                     self.InactivityTS = 0
@@ -142,12 +144,11 @@ class User(Base):
                     break
             except IntegrityError as exc_:
                 exc = exc_
-                db.get_session().expire(self, ["session"])
 
         if exc:
             raise exc
 
-        return self.session.SessionID
+        return sid
 
     def has_credential(self, credential: Set[int], approved: list["User"] = []):
         from aurweb.auth.creds import has_credential
@@ -206,9 +207,16 @@ class User(Base):
         from aurweb.models.package_vote import PackageVote
 
         return bool(
-            package.PackageBase.package_votes.filter(
-                PackageVote.UsersID == self.ID
-            ).scalar()
+            db.get_session()
+            .execute(
+                select(
+                    exists().where(
+                        PackageVote.PackageBaseID == package.PackageBase.ID,
+                        PackageVote.UsersID == self.ID,
+                    )
+                )
+            )
+            .scalar()
         )
 
     def notified(self, package) -> bool:
@@ -222,42 +230,53 @@ class User(Base):
         from aurweb.models.package_base import PackageBase
         from aurweb.models.package_notification import PackageNotification
 
-        query = None
         if isinstance(package, Package):
-            query = package.PackageBase.notifications
+            pkgbase_id = package.PackageBase.ID
         elif isinstance(package, PackageBase):
-            query = package.notifications
+            pkgbase_id = package.ID
+        else:
+            return False
 
-        # Run an exists() query where a pkgbase-related
-        # PackageNotification exists for self (a user).
         return bool(
-            db.query(
-                query.filter(PackageNotification.UserID == self.ID).exists()
-            ).scalar()
+            db.get_session()
+            .execute(
+                select(
+                    exists().where(
+                        PackageNotification.PackageBaseID == pkgbase_id,
+                        PackageNotification.UserID == self.ID,
+                    )
+                )
+            )
+            .scalar()
         )
 
     def packages(self):
-        """Returns an ORM query to Package objects owned by this user.
+        """Returns a list of Package objects owned by this user.
 
         This should really be replaced with an internal ORM join
         configured for the User model. This has not been done yet
         due to issues I've been encountering in the process, so
         sticking with this function until we can properly implement it.
 
-        :return: ORM query of User-packaged or maintained Package objects
+        :return: list of Package objects packaged or maintained by this user
         """
         from aurweb.models.package import Package
         from aurweb.models.package_base import PackageBase
 
         return (
-            db.query(Package)
-            .join(PackageBase)
-            .filter(
-                or_(
-                    PackageBase.PackagerUID == self.ID,
-                    PackageBase.MaintainerUID == self.ID,
+            db.get_session()
+            .execute(
+                select(Package)
+                .join(PackageBase)
+                .filter(
+                    or_(
+                        PackageBase.PackagerUID == self.ID,
+                        PackageBase.MaintainerUID == self.ID,
+                    )
                 )
             )
+            .scalars()
+            .all()
         )
 
     def __repr__(self):
