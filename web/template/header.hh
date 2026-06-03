@@ -4,7 +4,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml"
 	xml:lang="<?= htmlspecialchars($LANG, ENT_QUOTES) ?>" lang="<?= htmlspecialchars($LANG, ENT_QUOTES) ?>">
   <head>
-    <title>AUR (<?= htmlspecialchars($LANG); ?>)<?php if ($title != "") { print " - " . htmlspecialchars($title); } ?></title>
+    <title>AURA (<?= htmlspecialchars($LANG); ?>)<?php if ($title != "") { print " - " . htmlspecialchars($title); } ?></title>
 	<link rel='stylesheet' type='text/css' href='/css/archweb.css' />
 	<link rel='stylesheet' type='text/css' href='/css/aurweb.css' />
 	<link rel='shortcut icon' href='/images/favicon.ico' />
@@ -25,7 +25,7 @@
 					<li id="anb-wiki"><a href="https://wiki.archlinux.org/" title="Community documentation">Wiki</a></li>
 					<li id="anb-bugs"><a href="https://bugs.archlinux.org/" title="Report and track bugs">Bugs</a></li>
 					<li id="anb-security"><a href="https://security.archlinux.org/" title="Arch Linux Security Tracker">Security</a></li>
-					<li id="anb-aur"><a href="/" title="Arch Linux User Repository">AUR</a></li>
+					<li id="anb-aur"><a href="/" title="Arch Linux User Repository">AURA</a></li>
 					<li id="anb-download"><a href="https://www.archlinux.org/download/" title="Get Arch Linux">Download</a></li>
 				</ul>
 			</div>
@@ -79,4 +79,3 @@
 				</ul>
 			</div><!-- #archdev-navbar -->
 			<!-- Start of main content -->
-
