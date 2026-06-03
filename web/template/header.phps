@@ -4,7 +4,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml"
 	xml:lang="<?= htmlspecialchars($LANG, ENT_QUOTES) ?>" lang="<?= htmlspecialchars($LANG, ENT_QUOTES) ?>">
   <head>
-    <title>AURA (<?= htmlspecialchars($LANG); ?>)<?php if ($title != "") { print " - " . htmlspecialchars($title); } ?></title>
+    <title>AUR (<?= htmlspecialchars($LANG); ?>)<?php if ($title != "") { print " - " . htmlspecialchars($title); } ?></title>
 	<link rel='stylesheet' type='text/css' href='/css/archweb.css' />
 	<link rel='stylesheet' type='text/css' href='/css/aurweb.css' />
 	<link rel='shortcut icon' href='/images/favicon.ico' />
@@ -79,4 +79,3 @@
 				</ul>
 			</div><!-- #archdev-navbar -->
 			<!-- Start of main content -->
-
