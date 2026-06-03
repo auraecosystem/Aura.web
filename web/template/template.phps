@@ -4,7 +4,7 @@
 
 set_include_path(get_include_path() . PATH_SEPARATOR . '../lib');
 
-include("aur.inc.php");     # access AUR common functions
+include("aura.inc.php");     # access AUR common functions
 set_lang();                 # this sets up the visitor's language
 check_sid();                # see if they're still logged in
 html_header();              # print out the HTML header
