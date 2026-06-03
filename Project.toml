@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aurweb"
+dynamic = ["version"]
+dependencies = []
+
+[project.scripts]
+aurweb-git-auth = "aurweb.git.auth:main"
+aurweb-git-serve = "aurweb.git.serve:main"
+aurweb-git-update = "aurweb.git.update:main"
+aurweb-notify = "aurweb.scripts.notify:main"
